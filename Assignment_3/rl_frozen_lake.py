@@ -2,7 +2,7 @@ import numpy as np
 import gymnasium as gym
 from frozen_lake_utils import plot_frozenlake_model_free_results
 from enum import Enum
-
+np.random.seed(42)
 class RLAlgorithm(Enum):
     SARSA = 'SARSA'
     Q_LEARNING = 'Q-Learning'
@@ -23,6 +23,7 @@ class ModelFreeAgent:
 
         self.env = gym.make('FrozenLake-v1', desc=None, map_name="4x4",
                             is_slippery=True, render_mode='human').unwrapped
+
         self.num_actions = self.env.action_space.n
         self.num_states = self.env.observation_space.n
 
@@ -39,10 +40,20 @@ class ModelFreeAgent:
         :return: An action (int)
         """
 
-        # TODO: Implement an epsilon-greedy policy
-        # - with probability self.eps return a random action
-        # - otherwise find the action that maximizes self.Q
-        # - when testing, do not use epsilon-greedy exploration but always return the greedy action
+        # DONE: Implement an epsilon-greedy policy
+        if is_training:
+            # During training, we use epsilon-greedy exploration
+            if np.random.uniform(0, 1) < self.eps:
+            # Explore: choose a random action
+                action = np.random.randint(0, self.num_actions)
+            else:
+            # Exploit: choose the action with the highest Q-value
+                action = np.argmax(self.Q[state])
+        else:
+            # During testing, always choose the action with the highest Q-value
+            action = np.argmax(self.Q[state])
+    
+        return action
 
 
     def train_step(self, state, action, reward, next_state, next_action, done):
@@ -58,19 +69,57 @@ class ModelFreeAgent:
         """
 
         if self.algorithm == RLAlgorithm.SARSA:
-            # TODO: Implement the SARSA update.
+            # DONE: Implement the SARSA update.
             # Q(s, a) += alpha * (reward + gamma * Q(s', a') - Q(s, a))
-            raise NotImplementedError(f'{self.algorithm.name} not implemented')
+            # Retrieve the current Q-value
+            current_value = self.Q[state, action]
+
+            # Look up the Q-value for the next state and action
+            future_value = self.Q[next_state, next_action]
+
+            # Compute the update using the SARSA rule
+            self.Q[state, action] += self.alpha * (
+                reward + self.gamma * future_value - current_value
+            )
         elif self.algorithm == RLAlgorithm.Q_LEARNING:
-            # TODO: Implement the Q-Learning update.
+            # DONE: Implement the Q-Learning update.
             # Q(s, a) += alpha * (reward + gamma * max_a' Q(s', a') - Q(s, a))
             # where the max is taken over all possible actions
-            raise NotImplementedError(f'{self.algorithm.name} not implemented')
+            # Current Q-value for the state-action pair
+            current_q_value = self.Q[state, action]
+
+            # Find the maximum Q-value for the next state over all actions
+            max_next_q_value = max(self.Q[next_state, action_candidate] for action_candidate in range(self.num_actions))
+
+            
+            # Calculate the Q-Learning update
+            self.Q[state, action] += self.alpha * (reward + self.gamma * max_next_q_value - current_q_value)
         elif self.algorithm == RLAlgorithm.EXPECTED_SARSA:
-            # TODO: Implement the Expected SARSA update.
+            # DONE: Implement the Expected SARSA update.
             # Q(s, a) += alpha * (reward + gamma * E[Q(s', a')] - Q(s, a))
             # where the expectation E[Q(s', a')] is taken wrt. actions a' of the policy (s' is given by next_state)
-            raise NotImplementedError(f'{self.algorithm.name} not implemented')
+            # Calculate the expected Q-value for the next state
+            # Retrieve the current Q-value for the state-action pair
+            # Compute the greedy action for the next state
+            greedy_action = np.argmax(self.Q[next_state])
+
+            # Calculate the expected Q-value for the next state
+            expected_q_value = 0.0
+            for a_prime in range(self.num_actions):
+                # Epsilon-greedy probabilities during training
+                if a_prime == greedy_action:
+                    action_prob = (1 - self.eps) + (self.eps / self.num_actions)
+                else:
+                    action_prob = self.eps / self.num_actions
+
+                # Add weighted Q-value
+                expected_q_value += action_prob * self.Q[next_state, a_prime]
+
+            # Expected SARSA update
+            self.Q[state, action] += self.alpha * (
+                reward + self.gamma * expected_q_value - self.Q[state, action]
+            )
+            
 
     def run_episode(self, training, render=False):
         """
@@ -157,10 +206,21 @@ def train_test_agent(algorithm, gamma, alpha, eps, eps_decay,
 
 if __name__ == '__main__':
     eps = 1
-    for gamma in [0.95, 1]:
+    for gamma in [0.95, 1.0]:
         for algo in [RLAlgorithm.SARSA, RLAlgorithm.Q_LEARNING, RLAlgorithm.EXPECTED_SARSA]:
-            # TODO: For each algorithm independently, set good values for alpha and eps_decay
-            alpha, eps_decay = None, None
+            # DONE: Set good values for alpha and eps_decay based on the algorithm and gamma
+            if algo == RLAlgorithm.SARSA:
+                # SARSA parameters from table
+                alpha = 0.12 if gamma == 0.95 else 0.15
+                eps_decay = 0.996 if gamma == 0.95 else 0.994
+            elif algo == RLAlgorithm.Q_LEARNING:
+                # Q-Learning parameters from table
+                alpha = 0.12 if gamma == 0.95 else 0.15
+                eps_decay = 0.997 if gamma == 0.95 else 0.991
+            elif algo == RLAlgorithm.EXPECTED_SARSA:
+                # Expected SARSA parameters from table
+                alpha = 0.12 if gamma == 0.95 else 0.16
+                eps_decay = 0.997 if gamma == 0.95 else 0.99
 
             train_test_agent(algorithm=algo, gamma=gamma, alpha=alpha, eps=eps, eps_decay=eps_decay,
                              num_train_episodes=10_000, num_test_episodes=5_000,
